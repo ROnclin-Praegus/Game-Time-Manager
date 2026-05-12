@@ -142,6 +142,9 @@ class Game_Time_Manager:
 
         self.tree.pack(fill=tk.BOTH, expand=True, pady=5)
 
+        self.version_label = ctk.CTkLabel(self.right_frame, text=VERSION, font=("Helvetica", 10), text_color="gray")
+        self.version_label.pack(side=tk.BOTTOM, anchor="e", padx=5)
+
         self.status_label = ctk.CTkLabel(self.right_frame, text="", font=("Helvetica", 12), text_color="#28a745")
         self.status_label.pack(side=tk.BOTTOM, pady=2)
 
@@ -162,9 +165,6 @@ class Game_Time_Manager:
         self.btn_delete_entry = ctk.CTkButton(bottom_buttons_frame, text="Delete", fg_color="#dc3545",
                                               hover_color="#c82333", command=self.delete_entry)
         self.btn_delete_entry.pack(side=tk.LEFT, expand=True, padx=2)
-
-        self.version_label = ctk.CTkLabel(self.right_frame, text=VERSION, font=("Helvetica", 10), text_color="gray")
-        self.version_label.pack(side=tk.BOTTOM, anchor="e", padx=5)
 
         self.load_history()
         self.update_clock()
