@@ -18,6 +18,7 @@ else:
 
 # Port used for the command line to talk to the GUI
 IPC_PORT = 54321
+VERSION = "v1.1.0"
 
 # Set modern theme globally
 ctk.set_appearance_mode("Dark")
@@ -161,6 +162,9 @@ class Game_Time_Manager:
         self.btn_delete_entry = ctk.CTkButton(bottom_buttons_frame, text="Delete", fg_color="#dc3545",
                                               hover_color="#c82333", command=self.delete_entry)
         self.btn_delete_entry.pack(side=tk.LEFT, expand=True, padx=2)
+
+        self.version_label = ctk.CTkLabel(self.right_frame, text=VERSION, font=("Helvetica", 10), text_color="gray")
+        self.version_label.pack(side=tk.BOTTOM, anchor="e", padx=5)
 
         self.load_history()
         self.update_clock()
