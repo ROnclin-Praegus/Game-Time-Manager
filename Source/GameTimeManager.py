@@ -336,6 +336,10 @@ class Game_Time_Manager:
                                 (datetime.now().strftime("%Y-%m-%d %H:%M:%S"),))
             self.conn.commit()
             self.status_label.configure(text=f"Backup successful!", text_color="#28a745")
+
+            # Update label if settings dialog is open
+            if hasattr(self, 'last_backup_label') and self.last_backup_label.winfo_exists():
+                self.last_backup_label.configure(text=f"Last successful backup: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         except Exception as e:
             self.status_label.configure(text=f"Backup error: {str(e)}", text_color="#dc3545")
 
@@ -1104,6 +1108,15 @@ class Game_Time_Manager:
 
         ctk.CTkButton(tab_backup, text="Save Backup Settings", command=save_backup_settings,
                       fg_color="#28a745", hover_color="#218838").pack(pady=10)
+
+        # Last Backup Info
+        self.cursor.execute("SELECT value FROM settings WHERE key = 'last_backup'")
+        row = self.cursor.fetchone()
+        last_backup_time = row[0] if row else "Never"
+
+        self.last_backup_label = ctk.CTkLabel(tab_backup, text=f"Last successful backup: {last_backup_time}",
+                                              font=("Helvetica", 11, "italic"), text_color="gray")
+        self.last_backup_label.pack(pady=(5, 10))
 
         ctk.CTkLabel(tab_backup, text="Manual Restore", font=("Helvetica", 12, "bold")).pack(pady=(10, 5))
         ctk.CTkButton(tab_backup, text="Import Backup", command=self.import_backup,
