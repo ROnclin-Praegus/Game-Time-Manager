@@ -18,6 +18,7 @@ else:
 
 # Port used for the command line to talk to the GUI
 IPC_PORT = 54321
+VERSION = "v1.1.0"
 
 # Set modern theme globally
 ctk.set_appearance_mode("Dark")
@@ -141,6 +142,9 @@ class Game_Time_Manager:
 
         self.tree.pack(fill=tk.BOTH, expand=True, pady=5)
 
+        self.version_label = ctk.CTkLabel(self.right_frame, text=VERSION, font=("Helvetica", 10), text_color="gray")
+        self.version_label.pack(side=tk.BOTTOM, anchor="e", padx=5)
+
         self.status_label = ctk.CTkLabel(self.right_frame, text="", font=("Helvetica", 12), text_color="#28a745")
         self.status_label.pack(side=tk.BOTTOM, pady=2)
 
@@ -167,6 +171,9 @@ class Game_Time_Manager:
 
         # --- Local Server Setup (for CLI commands) ---
         self.setup_server()
+
+        # --- Window Close Protocol ---
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
         if initial_cmd:
             self.root.after(100, lambda: self.process_command(initial_cmd))
@@ -1086,6 +1093,39 @@ class Game_Time_Manager:
             self.status_label.configure(text="Entry deleted successfully.", text_color="#28a745")
         else:
             self.status_label.configure(text="Deletion cancelled.", text_color="#3a7ebf")
+
+    def on_closing(self):
+        if self.running or self.current_start_str != "--/--/---- --:--:--":
+            dialog = ctk.CTkToplevel(self.root)
+            dialog.title("Unsaved Time")
+            dialog.resizable(False, False)
+            dialog.transient(self.root)
+            dialog.grab_set()
+
+            ctk.CTkLabel(dialog, text="You have an active timer or unsaved time.\nWhat would you like to do?", font=("Helvetica", 14)).pack(pady=20, padx=20)
+
+            def save_and_exit():
+                if self.running:
+                    self.stop()
+                self.save_to_table()
+                self.root.destroy()
+
+            def discard_and_exit():
+                self.root.destroy()
+
+            def cancel():
+                dialog.destroy()
+
+            btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+            btn_frame.pack(pady=(0, 20))
+
+            ctk.CTkButton(btn_frame, text="Save & Exit", command=save_and_exit, fg_color="#28a745", hover_color="#218838").pack(side=tk.LEFT, padx=5)
+            ctk.CTkButton(btn_frame, text="Discard & Exit", command=discard_and_exit, fg_color="#dc3545", hover_color="#c82333").pack(side=tk.LEFT, padx=5)
+            ctk.CTkButton(btn_frame, text="Cancel", command=cancel, fg_color="#6c757d", hover_color="#5a6268").pack(side=tk.LEFT, padx=5)
+
+            self.center_dialog(dialog)
+        else:
+            self.root.destroy()
 
     def __del__(self):
         if hasattr(self, 'conn'):
