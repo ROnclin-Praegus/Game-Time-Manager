@@ -332,6 +332,24 @@ class Game_Time_Manager:
 
         try:
             shutil.copy2(db_path, backup_file)
+            
+            # --- Cleanup old backups ---
+            self.cursor.execute("SELECT value FROM settings WHERE key = 'max_backups'")
+            row = self.cursor.fetchone()
+            max_backups = int(row[0]) if row and row[0].isdigit() else 5
+            
+            backups = [f for f in os.listdir(backup_dir) if f.startswith("GameTime_Backup_") and f.endswith(".db")]
+            backups.sort()  # Sort by timestamp (filename)
+            
+            if len(backups) > max_backups:
+                files_to_delete = backups[:-max_backups]
+                for f in files_to_delete:
+                    try:
+                        os.remove(os.path.join(backup_dir, f))
+                    except:
+                        pass
+            # ---------------------------
+
             self.cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('last_backup', ?)",
                                 (datetime.now().strftime("%Y-%m-%d %H:%M:%S"),))
             self.conn.commit()
@@ -967,7 +985,7 @@ class Game_Time_Manager:
     def open_settings_dialog(self, target_tab=None):
         dialog = ctk.CTkToplevel(self.root)
         dialog.title("Settings")
-        dialog.geometry("450x480")
+        dialog.geometry("450x580")
         dialog.resizable(False, False)
         dialog.transient(self.root)
 
@@ -1067,7 +1085,17 @@ class Game_Time_Manager:
         interval_var = ctk.StringVar(value=current_interval)
         interval_menu = ctk.CTkOptionMenu(tab_backup, values=["none", "daily", "weekly", "monthly"],
                                           variable=interval_var)
-        interval_menu.pack(fill="x", padx=20, pady=(5, 15))
+        interval_menu.pack(fill="x", padx=20, pady=(5, 10))
+
+        # Max Backups
+        self.cursor.execute("SELECT value FROM settings WHERE key = 'max_backups'")
+        row = self.cursor.fetchone()
+        current_max = row[0] if row else "5"
+
+        ctk.CTkLabel(tab_backup, text="Max Backups to Keep:").pack(anchor="w", padx=20)
+        max_backups_entry = ctk.CTkEntry(tab_backup)
+        max_backups_entry.pack(fill="x", padx=20, pady=(5, 10))
+        max_backups_entry.insert(0, current_max)
 
         # Path
         self.cursor.execute("SELECT value FROM settings WHERE key = 'backup_path'")
@@ -1093,6 +1121,11 @@ class Game_Time_Manager:
         def save_backup_settings():
             new_interval = interval_var.get()
             new_path = path_entry.get().strip()
+            new_max = max_backups_entry.get().strip()
+
+            if not new_max.isdigit():
+                messagebox.showerror("Error", "Max backups must be a number.", parent=dialog)
+                return
 
             if new_interval != "none" and not new_path:
                 messagebox.showerror("Error", "Please select a backup location or set interval to 'none'.",
@@ -1103,6 +1136,8 @@ class Game_Time_Manager:
                                 (new_interval,))
             self.cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('backup_path', ?)",
                                 (new_path,))
+            self.cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('max_backups', ?)",
+                                (new_max,))
             self.conn.commit()
             messagebox.showinfo("Success", "Backup settings saved!", parent=dialog)
 
