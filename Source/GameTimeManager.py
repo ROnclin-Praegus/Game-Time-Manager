@@ -1,6 +1,6 @@
 import tkinter as tk
 from tkinter import ttk
-from tkinter import messagebox
+from tkinter import messagebox, filedialog
 import customtkinter as ctk
 import os
 import time
@@ -10,6 +10,7 @@ import sqlite3
 import sys
 import socket
 import json
+import shutil
 
 if getattr(sys, 'frozen', False):
     BASE_DIR = os.path.dirname(sys.executable)
@@ -175,6 +176,9 @@ class Game_Time_Manager:
         # --- Window Close Protocol ---
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
+        # --- Check Backup Settings ---
+        self.root.after(1000, self.check_backup_settings)
+
         if initial_cmd:
             self.root.after(100, lambda: self.process_command(initial_cmd))
 
@@ -239,7 +243,156 @@ class Game_Time_Manager:
         except sqlite3.OperationalError:
             pass
 
+        self.cursor.execute('''
+                            CREATE TABLE IF NOT EXISTS settings
+                            (
+                                key TEXT PRIMARY KEY,
+                                value TEXT
+                            )
+                            ''')
+
         self.conn.commit()
+
+    def check_backup_settings(self):
+        self.cursor.execute("SELECT value FROM settings WHERE key = 'backup_interval'")
+        row = self.cursor.fetchone()
+        interval = row[0] if row else None
+
+        if interval is None:
+            self.prompt_backup_setup()
+        elif interval != "none":
+            self.check_and_perform_backup(interval)
+
+    def prompt_backup_setup(self):
+        dialog = ctk.CTkToplevel(self.root)
+        dialog.title("Backup Setup")
+        dialog.geometry("400x300")
+        dialog.resizable(False, False)
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        ctk.CTkLabel(dialog, text="Database backup is not configured.\nWould you like to set it up now?",
+                     font=("Helvetica", 14)).pack(pady=20, padx=20)
+
+        def open_settings():
+            dialog.destroy()
+            self.open_settings_dialog(target_tab="Backup")
+
+        def disable_backup():
+            self.cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('backup_interval', 'none')")
+            self.conn.commit()
+            dialog.destroy()
+
+        btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        btn_frame.pack(pady=20)
+
+        ctk.CTkButton(btn_frame, text="Setup Backup", command=open_settings, fg_color="#28a745",
+                      hover_color="#218838").pack(side=tk.LEFT, padx=5)
+        ctk.CTkButton(btn_frame, text="Disable Backup", command=disable_backup, fg_color="#6c757d",
+                      hover_color="#5a6268").pack(side=tk.LEFT, padx=5)
+
+        self.center_dialog(dialog)
+
+    def check_and_perform_backup(self, interval):
+        self.cursor.execute("SELECT value FROM settings WHERE key = 'last_backup'")
+        row = self.cursor.fetchone()
+        last_backup_str = row[0] if row else None
+
+        now = datetime.now()
+        should_backup = False
+
+        if not last_backup_str:
+            should_backup = True
+        else:
+            last_backup = datetime.strptime(last_backup_str, "%Y-%m-%d %H:%M:%S")
+            diff = now - last_backup
+
+            if interval == "daily" and diff.days >= 1:
+                should_backup = True
+            elif interval == "weekly" and diff.days >= 7:
+                should_backup = True
+            elif interval == "monthly" and diff.days >= 30:
+                should_backup = True
+
+        if should_backup:
+            self.perform_backup()
+
+    def perform_backup(self):
+        self.cursor.execute("SELECT value FROM settings WHERE key = 'backup_path'")
+        row = self.cursor.fetchone()
+        backup_dir = row[0] if row else None
+
+        if not backup_dir or not os.path.exists(backup_dir):
+            self.status_label.configure(text="Backup failed: Path not found.", text_color="#dc3545")
+            return
+
+        db_path = os.path.join(BASE_DIR, "Game Time.db")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_file = os.path.join(backup_dir, f"GameTime_Backup_{timestamp}.db")
+
+        try:
+            shutil.copy2(db_path, backup_file)
+            
+            # --- Cleanup old backups ---
+            self.cursor.execute("SELECT value FROM settings WHERE key = 'max_backups'")
+            row = self.cursor.fetchone()
+            max_backups = int(row[0]) if row and row[0].isdigit() else 5
+            
+            backups = [f for f in os.listdir(backup_dir) if f.startswith("GameTime_Backup_") and f.endswith(".db")]
+            backups.sort()  # Sort by timestamp (filename)
+            
+            if len(backups) > max_backups:
+                files_to_delete = backups[:-max_backups]
+                for f in files_to_delete:
+                    try:
+                        os.remove(os.path.join(backup_dir, f))
+                    except:
+                        pass
+            # ---------------------------
+
+            self.cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('last_backup', ?)",
+                                (datetime.now().strftime("%Y-%m-%d %H:%M:%S"),))
+            self.conn.commit()
+            self.status_label.configure(text=f"Backup successful!", text_color="#28a745")
+
+            # Update label if settings dialog is open
+            if hasattr(self, 'last_backup_label') and self.last_backup_label.winfo_exists():
+                self.last_backup_label.configure(text=f"Last successful backup: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        except Exception as e:
+            self.status_label.configure(text=f"Backup error: {str(e)}", text_color="#dc3545")
+
+    def import_backup(self):
+        confirm = messagebox.askyesno("Confirm Import",
+                                      "Warning: Importing a backup will overwrite your current history and settings.\n\nAre you sure you want to proceed?")
+        if not confirm:
+            return
+
+        backup_file = filedialog.askopenfilename(title="Select Backup Database",
+                                                 filetypes=[("Database files", "*.db")])
+        if not backup_file:
+            return
+
+        try:
+            # 1. Close current connection
+            self.conn.close()
+
+            # 2. Copy the backup file over the current database
+            db_path = os.path.join(BASE_DIR, "Game Time.db")
+            shutil.copy2(backup_file, db_path)
+
+            # 3. Re-establish connection and re-setup
+            self.setup_database()
+
+            # 4. Refresh the history table in the UI
+            self.load_history()
+
+            messagebox.showinfo("Success", "Backup imported successfully!")
+            self.status_label.configure(text="Backup imported successfully!", text_color="#28a745")
+        except Exception as e:
+            # Try to recover connection if possible
+            self.setup_database()
+            messagebox.showerror("Error", f"Failed to import backup: {str(e)}")
+            self.status_label.configure(text="Import failed.", text_color="#dc3545")
 
     def load_history(self):
         for row in self.tree.get_children():
@@ -829,10 +982,10 @@ class Game_Time_Manager:
 
         # --- Tags Settings Dialog ---
 
-    def open_settings_dialog(self):
+    def open_settings_dialog(self, target_tab=None):
         dialog = ctk.CTkToplevel(self.root)
         dialog.title("Settings")
-        dialog.geometry("380x420")
+        dialog.geometry("450x580")
         dialog.resizable(False, False)
         dialog.transient(self.root)
 
@@ -845,7 +998,11 @@ class Game_Time_Manager:
         tabview.pack(fill=tk.BOTH, expand=True, padx=15, pady=(5, 15))
 
         tab_tags = tabview.add("Tags")
+        tab_backup = tabview.add("Backup")
         tab_appearance = tabview.add("Appearance")
+
+        if target_tab:
+            tabview.set(target_tab)
 
         # --- TAGS TAB ---
         ctk.CTkLabel(tab_tags, text="Available Tags:", font=("Helvetica", 14, "bold")).pack(pady=(10, 5))
@@ -909,12 +1066,96 @@ class Game_Time_Manager:
                 self.conn.commit()
                 refresh_listbox()
 
-        btn_frame = ctk.CTkFrame(tab_tags, fg_color="transparent")
-        btn_frame.pack(pady=15)
-        ctk.CTkButton(btn_frame, text="Add", command=add_tag, width=70).pack(side=tk.LEFT, padx=5)
-        ctk.CTkButton(btn_frame, text="Edit", command=edit_tag, width=70).pack(side=tk.LEFT, padx=5)
-        ctk.CTkButton(btn_frame, text="Delete", command=delete_tag, width=70, fg_color="#dc3545",
+        tag_btn_frame = ctk.CTkFrame(tab_tags, fg_color="transparent")
+        tag_btn_frame.pack(pady=15)
+        ctk.CTkButton(tag_btn_frame, text="Add", command=add_tag, width=70).pack(side=tk.LEFT, padx=5)
+        ctk.CTkButton(tag_btn_frame, text="Edit", command=edit_tag, width=70).pack(side=tk.LEFT, padx=5)
+        ctk.CTkButton(tag_btn_frame, text="Delete", command=delete_tag, width=70, fg_color="#dc3545",
                       hover_color="#c82333").pack(side=tk.LEFT, padx=5)
+
+        # --- BACKUP TAB ---
+        ctk.CTkLabel(tab_backup, text="Backup Configuration", font=("Helvetica", 14, "bold")).pack(pady=(10, 15))
+
+        # Interval
+        self.cursor.execute("SELECT value FROM settings WHERE key = 'backup_interval'")
+        row = self.cursor.fetchone()
+        current_interval = row[0] if row else "none"
+
+        ctk.CTkLabel(tab_backup, text="Backup Interval:").pack(anchor="w", padx=20)
+        interval_var = ctk.StringVar(value=current_interval)
+        interval_menu = ctk.CTkOptionMenu(tab_backup, values=["none", "daily", "weekly", "monthly"],
+                                          variable=interval_var)
+        interval_menu.pack(fill="x", padx=20, pady=(5, 10))
+
+        # Max Backups
+        self.cursor.execute("SELECT value FROM settings WHERE key = 'max_backups'")
+        row = self.cursor.fetchone()
+        current_max = row[0] if row else "5"
+
+        ctk.CTkLabel(tab_backup, text="Max Backups to Keep:").pack(anchor="w", padx=20)
+        max_backups_entry = ctk.CTkEntry(tab_backup)
+        max_backups_entry.pack(fill="x", padx=20, pady=(5, 10))
+        max_backups_entry.insert(0, current_max)
+
+        # Path
+        self.cursor.execute("SELECT value FROM settings WHERE key = 'backup_path'")
+        row = self.cursor.fetchone()
+        current_path = row[0] if row else ""
+
+        ctk.CTkLabel(tab_backup, text="Backup Location:").pack(anchor="w", padx=20)
+        path_frame = ctk.CTkFrame(tab_backup, fg_color="transparent")
+        path_frame.pack(fill="x", padx=20, pady=5)
+
+        path_entry = ctk.CTkEntry(path_frame, placeholder_text="No location set")
+        path_entry.pack(side=tk.LEFT, fill="x", expand=True, padx=(0, 5))
+        path_entry.insert(0, current_path)
+
+        def browse_path():
+            folder = filedialog.askdirectory(parent=dialog)
+            if folder:
+                path_entry.delete(0, tk.END)
+                path_entry.insert(0, folder)
+
+        ctk.CTkButton(path_frame, text="Browse", width=70, command=browse_path).pack(side=tk.RIGHT)
+
+        def save_backup_settings():
+            new_interval = interval_var.get()
+            new_path = path_entry.get().strip()
+            new_max = max_backups_entry.get().strip()
+
+            if not new_max.isdigit():
+                messagebox.showerror("Error", "Max backups must be a number.", parent=dialog)
+                return
+
+            if new_interval != "none" and not new_path:
+                messagebox.showerror("Error", "Please select a backup location or set interval to 'none'.",
+                                     parent=dialog)
+                return
+
+            self.cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('backup_interval', ?)",
+                                (new_interval,))
+            self.cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('backup_path', ?)",
+                                (new_path,))
+            self.cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('max_backups', ?)",
+                                (new_max,))
+            self.conn.commit()
+            messagebox.showinfo("Success", "Backup settings saved!", parent=dialog)
+
+        ctk.CTkButton(tab_backup, text="Save Backup Settings", command=save_backup_settings,
+                      fg_color="#28a745", hover_color="#218838").pack(pady=10)
+
+        # Last Backup Info
+        self.cursor.execute("SELECT value FROM settings WHERE key = 'last_backup'")
+        row = self.cursor.fetchone()
+        last_backup_time = row[0] if row else "Never"
+
+        self.last_backup_label = ctk.CTkLabel(tab_backup, text=f"Last successful backup: {last_backup_time}",
+                                              font=("Helvetica", 11, "italic"), text_color="gray")
+        self.last_backup_label.pack(pady=(5, 10))
+
+        ctk.CTkLabel(tab_backup, text="Manual Restore", font=("Helvetica", 12, "bold")).pack(pady=(10, 5))
+        ctk.CTkButton(tab_backup, text="Import Backup", command=self.import_backup,
+                      fg_color="#3a7ebf").pack(pady=5)
 
         # --- APPEARANCE TAB ---
         ctk.CTkLabel(tab_appearance, text="UI Theme:", font=("Helvetica", 14, "bold")).pack(pady=(30, 10))
