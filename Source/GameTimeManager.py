@@ -1230,7 +1230,7 @@ class Game_Time_Manager:
             
             # DLC Sections
             for i, dlc in enumerate(dlcs, 1):
-                dlc_display_name = dlc if dlc and dlc.strip() else f"DLC {i} name not set"
+                dlc_display_name = dlc if dlc and dlc.strip() else f"DLC {i} - name missing"
                 dlc_report, dlc_any, dlc_100 = get_timeline_and_stats(f"DLC {i} ({dlc_display_name})", False, f"DLC {i} - any%", f"DLC {i} - 100%", f"DLC {i} - 100%")
                 report += dlc_report + "\n---\n\n"
                 total_any += dlc_any
