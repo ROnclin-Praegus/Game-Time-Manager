@@ -999,7 +999,7 @@ class Game_Time_Manager:
         update_stats()
 
     def get_dlcs_for_game(self, game_name):
-        self.cursor.execute("SELECT dlc_name FROM dlcs WHERE game_name = ? ORDER BY dlc_name", (game_name,))
+        self.cursor.execute("SELECT dlc_name FROM dlcs WHERE game_name = ? ORDER BY id", (game_name,))
         return [row[0] for row in self.cursor.fetchall()]
 
     def open_games_dialog(self):
@@ -1037,8 +1037,9 @@ class Game_Time_Manager:
 
         def refresh_dlc_list(selected_game):
             dlc_listbox.delete(0, tk.END)
-            for dlc in self.get_dlcs_for_game(selected_game):
-                dlc_listbox.insert(tk.END, dlc)
+            for i, dlc in enumerate(self.get_dlcs_for_game(selected_game), 1):
+                display_name = dlc if dlc and dlc.strip() else f"DLC {i} - name missing"
+                dlc_listbox.insert(tk.END, display_name)
 
         game_cb = ctk.CTkComboBox(dialog, values=games, command=refresh_dlc_list)
         game_cb.pack(pady=5)
@@ -1064,16 +1065,17 @@ class Game_Time_Manager:
             if current_game not in games:
                 messagebox.showwarning("Warning", f"The game '{current_game}' does not exist in history.", parent=dialog)
                 return
-            dlc_dialog = ctk.CTkInputDialog(text=f"Enter DLC name for '{current_game}':", title="Add DLC")
+            dlc_dialog = ctk.CTkInputDialog(text=f"Enter DLC name for '{current_game}' (leave empty for unnamed):", title="Add DLC")
             new_dlc = dlc_dialog.get_input()
-            if new_dlc and new_dlc.strip():
+            if new_dlc is not None:
+                val = new_dlc.strip() if new_dlc.strip() else None
                 try:
                     self.cursor.execute("INSERT INTO dlcs (game_name, dlc_name) VALUES (?, ?)", 
-                                        (current_game, new_dlc.strip()))
+                                        (current_game, val))
                     self.conn.commit()
                     refresh_dlc_list(current_game)
                 except sqlite3.IntegrityError:
-                    messagebox.showerror("Error", "This DLC already exists for this game!", parent=dialog)
+                    messagebox.showerror("Error", "This DLC name already exists for this game!", parent=dialog)
 
         def edit_dlc():
             current_game = game_cb.get()
@@ -1084,19 +1086,29 @@ class Game_Time_Manager:
             if not selected:
                 messagebox.showwarning("Warning", "Select a DLC to edit.", parent=dialog)
                 return
-            old_dlc = dlc_listbox.get(selected[0])
+            
+            # Fetch the actual dlc_name from DB since the listbox shows a display name
+            dlcs = self.get_dlcs_for_game(current_game)
+            old_dlc = dlcs[selected[0]]
 
-            dlc_dialog = ctk.CTkInputDialog(text=f"Enter new name for DLC '{old_dlc}':", title="Edit DLC")
+            dlc_dialog = ctk.CTkInputDialog(text=f"Enter new name for DLC (currently '{old_dlc if old_dlc else 'unnamed'}'):", title="Edit DLC")
             new_dlc = dlc_dialog.get_input()
 
-            if new_dlc and new_dlc.strip():
+            if new_dlc is not None:
+                val = new_dlc.strip() if new_dlc.strip() else None
                 try:
-                    self.cursor.execute("UPDATE dlcs SET dlc_name = ? WHERE game_name = ? AND dlc_name = ?", 
-                                        (new_dlc.strip(), current_game, old_dlc))
+                    # We need to target the specific row by ID or original name
+                    # Since we don't have ID easily here, and names can be NULL, let's use a slightly more complex query
+                    if old_dlc is None:
+                        self.cursor.execute("UPDATE dlcs SET dlc_name = ? WHERE id = (SELECT id FROM dlcs WHERE game_name = ? AND dlc_name IS NULL LIMIT 1 OFFSET ?)",
+                                            (val, current_game, selected[0]))
+                    else:
+                        self.cursor.execute("UPDATE dlcs SET dlc_name = ? WHERE id = (SELECT id FROM dlcs WHERE game_name = ? AND dlc_name = ? LIMIT 1)",
+                                            (val, current_game, old_dlc))
                     self.conn.commit()
                     refresh_dlc_list(current_game)
                 except sqlite3.IntegrityError:
-                    messagebox.showerror("Error", "This DLC already exists for this game!", parent=dialog)
+                    messagebox.showerror("Error", "This DLC name already exists for this game!", parent=dialog)
 
         def delete_dlc():
             current_game = game_cb.get()
@@ -1107,11 +1119,17 @@ class Game_Time_Manager:
             if not selected:
                 messagebox.showwarning("Warning", "Select a DLC to delete.", parent=dialog)
                 return
-            dlc_to_delete = dlc_listbox.get(selected[0])
             
-            confirm = messagebox.askyesno("Confirm", f"Delete DLC '{dlc_to_delete}' from '{current_game}'?", parent=dialog)
+            dlcs = self.get_dlcs_for_game(current_game)
+            dlc_to_delete = dlcs[selected[0]]
+            
+            confirm = messagebox.askyesno("Confirm", f"Delete selected DLC from '{current_game}'?", parent=dialog)
             if confirm:
-                self.cursor.execute("DELETE FROM dlcs WHERE game_name = ? AND dlc_name = ?", (current_game, dlc_to_delete))
+                if dlc_to_delete is None:
+                    self.cursor.execute("DELETE FROM dlcs WHERE id = (SELECT id FROM dlcs WHERE game_name = ? AND dlc_name IS NULL LIMIT 1 OFFSET ?)",
+                                        (current_game, selected[0]))
+                else:
+                    self.cursor.execute("DELETE FROM dlcs WHERE game_name = ? AND dlc_name = ?", (current_game, dlc_to_delete))
                 self.conn.commit()
                 refresh_dlc_list(current_game)
 
