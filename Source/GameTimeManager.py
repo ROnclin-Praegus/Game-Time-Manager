@@ -1017,8 +1017,6 @@ class Game_Time_Manager:
             ctk.CTkButton(dialog, text="Close", command=dialog.destroy).pack(pady=20)
             return
 
-        game_var = tk.StringVar(value=games[0])
-        
         # DLC Listbox and Frame
         ctk.CTkLabel(dialog, text="DLCs for selected game:", font=("Helvetica", 12)).pack(pady=(20, 5))
         
@@ -1038,13 +1036,27 @@ class Game_Time_Manager:
             for dlc in self.get_dlcs_for_game(selected_game):
                 dlc_listbox.insert(tk.END, dlc)
 
-        game_menu = ctk.CTkOptionMenu(dialog, values=games, variable=game_var, command=refresh_dlc_list)
-        game_menu.pack(pady=5)
-        game_menu.set(games[0])
+        game_cb = ctk.CTkComboBox(dialog, values=games, command=refresh_dlc_list)
+        game_cb.pack(pady=5)
+        game_cb.set(games[0])
         refresh_dlc_list(games[0])
 
+        def on_game_type(event):
+            typed = game_cb.get()
+            if typed == "":
+                game_cb.configure(values=games)
+            else:
+                filtered = [g for g in games if typed.lower() in g.lower()]
+                game_cb.configure(values=filtered)
+            
+            # If the typed value matches exactly, refresh the list
+            if typed in games:
+                refresh_dlc_list(typed)
+
+        game_cb.bind("<KeyRelease>", on_game_type)
+
         def add_dlc():
-            current_game = game_var.get()
+            current_game = game_cb.get()
             dlc_dialog = ctk.CTkInputDialog(text=f"Enter DLC name for '{current_game}':", title="Add DLC")
             new_dlc = dlc_dialog.get_input()
             if new_dlc and new_dlc.strip():
@@ -1062,7 +1074,7 @@ class Game_Time_Manager:
                 messagebox.showwarning("Warning", "Select a DLC to edit.", parent=dialog)
                 return
             old_dlc = dlc_listbox.get(selected[0])
-            current_game = game_var.get()
+            current_game = game_cb.get()
 
             dlc_dialog = ctk.CTkInputDialog(text=f"Enter new name for DLC '{old_dlc}':", title="Edit DLC")
             new_dlc = dlc_dialog.get_input()
@@ -1082,7 +1094,7 @@ class Game_Time_Manager:
                 messagebox.showwarning("Warning", "Select a DLC to delete.", parent=dialog)
                 return
             dlc_to_delete = dlc_listbox.get(selected[0])
-            current_game = game_var.get()
+            current_game = game_cb.get()
             
             confirm = messagebox.askyesno("Confirm", f"Delete DLC '{dlc_to_delete}' from '{current_game}'?", parent=dialog)
             if confirm:
