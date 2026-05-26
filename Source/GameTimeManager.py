@@ -1167,7 +1167,7 @@ class Game_Time_Manager:
                 minutes, seconds = divmod(remainder, 60)
                 return f"{hours:02}:{minutes:02}:{seconds:02}.00"
 
-            def get_timeline_and_stats(section_name, section_label, start_tag_any, start_tag_100, hundred_tag):
+            def get_timeline_and_stats(section_name, is_base_game, start_tag_any, start_tag_100, hundred_tag):
                 relevant_starts = []
                 hundred_starts = []
                 any_sec = 0
@@ -1203,13 +1203,18 @@ class Game_Time_Manager:
                 finished = format_date(relevant_starts[-1][1]) if relevant_starts else "empty"
                 hundred_p = format_date(hundred_starts[-1][1]) if hundred_starts else "empty"
                 
+                # Logic for finish time: 
+                # Base Game: any% total, fallback to 100% total
+                # DLC: any% total
+                if is_base_game:
+                    finish_time = any_sec if any_sec > 0 else hundred_sec
+                else:
+                    finish_time = any_sec
+
                 section_report = f"{section_name}:\n"
                 section_report += f"Started: {started}\n"
-                section_report += f"Finished: {finished}\n"
-                section_report += f"100%'d: {hundred_p}\n\n"
-                section_report += f"Subtotal time {section_label} :\n"
-                section_report += f"any%: {seconds_to_hms(any_sec)}\n"
-                section_report += f"100%: {seconds_to_hms(hundred_sec)}\n"
+                section_report += f"Finished: {finished} - time: {seconds_to_hms(finish_time)}\n"
+                section_report += f"100%'d: {hundred_p} - time: {seconds_to_hms(hundred_sec)}\n"
                 
                 return section_report, any_sec, hundred_sec
 
@@ -1218,23 +1223,25 @@ class Game_Time_Manager:
             total_hundred = 0
             
             # Base Game Section
-            bg_report, bg_any, bg_100 = get_timeline_and_stats("Base game", "base game", "Base game - any%", "Base game - 100%", "Base game - 100%")
-            report += bg_report + "\n"
+            bg_report, bg_any, bg_100 = get_timeline_and_stats("Base game", True, "Base game - any%", "Base game - 100%", "Base game - 100%")
+            report += bg_report + "\n---\n\n"
             total_any += bg_any
             total_hundred += bg_100
             
             # DLC Sections
             for i, dlc in enumerate(dlcs, 1):
                 dlc_display_name = dlc if dlc and dlc.strip() else f"DLC {i} name not set"
-                dlc_report, dlc_any, dlc_100 = get_timeline_and_stats(f"DLC {i} ({dlc_display_name})", f"DLC {i}", f"DLC {i} - any%", f"DLC {i} - 100%", f"DLC {i} - 100%")
-                report += dlc_report + "\n"
+                dlc_report, dlc_any, dlc_100 = get_timeline_and_stats(f"DLC {i} ({dlc_display_name})", False, f"DLC {i} - any%", f"DLC {i} - 100%", f"DLC {i} - 100%")
+                report += dlc_report + "\n---\n\n"
                 total_any += dlc_any
                 total_hundred += dlc_100
             
-            report += "---\n\n"
             report += "Total time:\n"
             report += f"any%: {seconds_to_hms(total_any)}\n"
             report += f"100%: {seconds_to_hms(total_hundred)}\n"
+            
+            report_text.insert(tk.END, report)
+            report_text.configure(state="disabled")
             
             report_text.insert(tk.END, report)
             report_text.configure(state="disabled")
