@@ -1057,6 +1057,9 @@ class Game_Time_Manager:
 
         def add_dlc():
             current_game = game_cb.get()
+            if current_game not in games:
+                messagebox.showwarning("Warning", f"The game '{current_game}' does not exist in history.", parent=dialog)
+                return
             dlc_dialog = ctk.CTkInputDialog(text=f"Enter DLC name for '{current_game}':", title="Add DLC")
             new_dlc = dlc_dialog.get_input()
             if new_dlc and new_dlc.strip():
@@ -1069,12 +1072,15 @@ class Game_Time_Manager:
                     messagebox.showerror("Error", "This DLC already exists for this game!", parent=dialog)
 
         def edit_dlc():
+            current_game = game_cb.get()
+            if current_game not in games:
+                messagebox.showwarning("Warning", f"The game '{current_game}' does not exist in history.", parent=dialog)
+                return
             selected = dlc_listbox.curselection()
             if not selected:
                 messagebox.showwarning("Warning", "Select a DLC to edit.", parent=dialog)
                 return
             old_dlc = dlc_listbox.get(selected[0])
-            current_game = game_cb.get()
 
             dlc_dialog = ctk.CTkInputDialog(text=f"Enter new name for DLC '{old_dlc}':", title="Edit DLC")
             new_dlc = dlc_dialog.get_input()
@@ -1089,12 +1095,15 @@ class Game_Time_Manager:
                     messagebox.showerror("Error", "This DLC already exists for this game!", parent=dialog)
 
         def delete_dlc():
+            current_game = game_cb.get()
+            if current_game not in games:
+                messagebox.showwarning("Warning", f"The game '{current_game}' does not exist in history.", parent=dialog)
+                return
             selected = dlc_listbox.curselection()
             if not selected:
                 messagebox.showwarning("Warning", "Select a DLC to delete.", parent=dialog)
                 return
             dlc_to_delete = dlc_listbox.get(selected[0])
-            current_game = game_cb.get()
             
             confirm = messagebox.askyesno("Confirm", f"Delete DLC '{dlc_to_delete}' from '{current_game}'?", parent=dialog)
             if confirm:
