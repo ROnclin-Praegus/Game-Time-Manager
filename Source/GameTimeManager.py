@@ -1149,46 +1149,92 @@ class Game_Time_Manager:
             report_text.delete("1.0", tk.END)
             
             # Fetch all history for this game
-            self.cursor.execute("SELECT tags, start_time FROM history WHERE game_name = ?", (selected_game,))
+            self.cursor.execute("SELECT tags, start_time, total_time FROM history WHERE game_name = ?", (selected_game,))
             history = self.cursor.fetchall()
             
             # Fetch all DLCs for this game
             dlcs = self.get_dlcs_for_game(selected_game)
             
-            def get_timeline(section_name, start_tag_any, start_tag_100, hundred_tag):
+            def time_to_seconds(t_str):
+                try:
+                    parts = t_str.split(':')
+                    return int(parts[0]) * 3600 + int(parts[1]) * 60 + float(parts[2])
+                except:
+                    return 0
+
+            def seconds_to_hms(total_seconds):
+                hours, remainder = divmod(int(total_seconds), 3600)
+                minutes, seconds = divmod(remainder, 60)
+                return f"{hours:02}:{minutes:02}:{seconds:02}.00"
+
+            def get_timeline_and_stats(section_name, section_label, start_tag_any, start_tag_100, hundred_tag):
                 relevant_starts = []
                 hundred_starts = []
+                any_sec = 0
+                hundred_sec = 0
                 
-                for tags_str, start_time_str in history:
+                for tags_str, start_time_str, total_time_str in history:
                     tags = [t.strip() for t in tags_str.split(",")]
                     try:
                         dt = datetime.strptime(start_time_str, "%d/%m/%Y %H:%M:%S")
+                        sec = time_to_seconds(total_time_str)
+                        
                         if start_tag_any in tags or start_tag_100 in tags:
                             relevant_starts.append((dt, start_time_str))
                         if hundred_tag in tags:
                             hundred_starts.append((dt, start_time_str))
+                            
+                        if start_tag_any in tags:
+                            any_sec += sec
+                        if hundred_tag in tags:
+                            hundred_sec += sec
+                            
                     except ValueError:
                         continue
                 
                 relevant_starts.sort()
                 hundred_starts.sort()
                 
-                started = relevant_starts[0][1] if relevant_starts else "empty"
-                finished = relevant_starts[-1][1] if relevant_starts else "empty"
-                hundred_p = hundred_starts[-1][1] if hundred_starts else "empty"
+                def format_date(dt_str):
+                    if dt_str == "empty": return "empty"
+                    return dt_str.split(" ")[0]
+
+                started = format_date(relevant_starts[0][1]) if relevant_starts else "empty"
+                finished = format_date(relevant_starts[-1][1]) if relevant_starts else "empty"
+                hundred_p = format_date(hundred_starts[-1][1]) if hundred_starts else "empty"
                 
-                return f"{section_name}:\nStarted: {started}\nFinished: {finished}\n100%'d: {hundred_p}\n"
+                section_report = f"{section_name}:\n"
+                section_report += f"Started: {started}\n"
+                section_report += f"Finished: {finished}\n"
+                section_report += f"100%'d: {hundred_p}\n\n"
+                section_report += f"Subtotal time {section_label} :\n"
+                section_report += f"any%: {seconds_to_hms(any_sec)}\n"
+                section_report += f"100%: {seconds_to_hms(hundred_sec)}\n"
+                
+                return section_report, any_sec, hundred_sec
 
             report = f"Timeline ({selected_game}):\n\n"
+            total_any = 0
+            total_hundred = 0
             
             # Base Game Section
-            report += get_timeline("Base game", "Base game - any%", "Base game - 100%", "Base game - 100%")
-            report += "\n"
+            bg_report, bg_any, bg_100 = get_timeline_and_stats("Base game", "base game", "Base game - any%", "Base game - 100%", "Base game - 100%")
+            report += bg_report + "\n"
+            total_any += bg_any
+            total_hundred += bg_100
             
             # DLC Sections
             for i, dlc in enumerate(dlcs, 1):
-                report += get_timeline(f"DLC {i} ({dlc})", f"DLC {i} - any%", f"DLC {i} - 100%", f"DLC {i} - 100%")
-                report += "\n"
+                dlc_display_name = dlc if dlc and dlc.strip() else f"DLC {i} name not set"
+                dlc_report, dlc_any, dlc_100 = get_timeline_and_stats(f"DLC {i} ({dlc_display_name})", f"DLC {i}", f"DLC {i} - any%", f"DLC {i} - 100%", f"DLC {i} - 100%")
+                report += dlc_report + "\n"
+                total_any += dlc_any
+                total_hundred += dlc_100
+            
+            report += "---\n\n"
+            report += "Total time:\n"
+            report += f"any%: {seconds_to_hms(total_any)}\n"
+            report += f"100%: {seconds_to_hms(total_hundred)}\n"
             
             report_text.insert(tk.END, report)
             report_text.configure(state="disabled")
