@@ -1186,8 +1186,8 @@ class Game_Time_Manager:
             report += "\n"
             
             # DLC Sections
-            for dlc in dlcs:
-                report += get_timeline(f"DLC ({dlc})", f"{dlc} - any%", f"{dlc} - 100%", f"{dlc} - 100%")
+            for i, dlc in enumerate(dlcs, 1):
+                report += get_timeline(f"DLC {i} ({dlc})", f"DLC {i} - any%", f"DLC {i} - 100%", f"DLC {i} - 100%")
                 report += "\n"
             
             report_text.insert(tk.END, report)
