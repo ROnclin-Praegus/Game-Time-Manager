@@ -122,6 +122,10 @@ class Game_Time_Manager:
                                        font=("Helvetica", 12))
         self.btn_games.pack(side=tk.RIGHT, padx=5)
 
+        self.btn_report = ctk.CTkButton(right_top_bar, text="📋 Report", command=self.open_report_dialog, width=80,
+                                        font=("Helvetica", 12))
+        self.btn_report.pack(side=tk.RIGHT, padx=5)
+
         # --- Treeview Base Styling ---
         style = ttk.Style()
         style.theme_use("default")
@@ -1117,6 +1121,97 @@ class Game_Time_Manager:
         ctk.CTkButton(btn_frame, text="Edit", command=edit_dlc, width=80).pack(side=tk.LEFT, padx=5)
         ctk.CTkButton(btn_frame, text="Delete", command=delete_dlc, width=80, fg_color="#dc3545",
                       hover_color="#c82333").pack(side=tk.LEFT, padx=5)
+
+    def open_report_dialog(self):
+        dialog = ctk.CTkToplevel(self.root)
+        dialog.title("Game Timeline Report")
+        dialog.geometry("600x700")
+        dialog.resizable(False, False)
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        self.center_dialog(dialog)
+
+        # Game Selection
+        ctk.CTkLabel(dialog, text="Select Game:", font=("Helvetica", 14, "bold")).pack(pady=(20, 5))
+        
+        games = self.get_all_games()
+        if not games:
+            ctk.CTkLabel(dialog, text="No games found in history.", text_color="gray").pack(pady=10)
+            ctk.CTkButton(dialog, text="Close", command=dialog.destroy).pack(pady=20)
+            return
+
+        report_text = ctk.CTkTextbox(dialog, width=550, height=500, font=("Courier New", 12))
+        report_text.pack(pady=10, padx=20)
+
+        def generate_report(selected_game):
+            report_text.configure(state="normal")
+            report_text.delete("1.0", tk.END)
+            
+            # Fetch all history for this game
+            self.cursor.execute("SELECT tags, start_time FROM history WHERE game_name = ?", (selected_game,))
+            history = self.cursor.fetchall()
+            
+            # Fetch all DLCs for this game
+            dlcs = self.get_dlcs_for_game(selected_game)
+            
+            def get_timeline(section_name, start_tag_any, start_tag_100, hundred_tag):
+                relevant_starts = []
+                hundred_starts = []
+                
+                for tags_str, start_time_str in history:
+                    tags = [t.strip() for t in tags_str.split(",")]
+                    try:
+                        dt = datetime.strptime(start_time_str, "%d/%m/%Y %H:%M:%S")
+                        if start_tag_any in tags or start_tag_100 in tags:
+                            relevant_starts.append((dt, start_time_str))
+                        if hundred_tag in tags:
+                            hundred_starts.append((dt, start_time_str))
+                    except ValueError:
+                        continue
+                
+                relevant_starts.sort()
+                hundred_starts.sort()
+                
+                started = relevant_starts[0][1] if relevant_starts else "empty"
+                finished = relevant_starts[-1][1] if relevant_starts else "empty"
+                hundred_p = hundred_starts[-1][1] if hundred_starts else "empty"
+                
+                return f"{section_name}:\nStarted: {started}\nFinished: {finished}\n100%'d: {hundred_p}\n"
+
+            report = f"Timeline ({selected_game}):\n\n"
+            
+            # Base Game Section
+            report += get_timeline("Base game", "Base game - any%", "Base game - 100%", "Base game - 100%")
+            report += "\n"
+            
+            # DLC Sections
+            for dlc in dlcs:
+                report += get_timeline(f"DLC ({dlc})", f"{dlc} - any%", f"{dlc} - 100%", f"{dlc} - 100%")
+                report += "\n"
+            
+            report_text.insert(tk.END, report)
+            report_text.configure(state="disabled")
+
+        game_cb = ctk.CTkComboBox(dialog, values=games, command=generate_report, width=300)
+        game_cb.pack(pady=5)
+        game_cb.set(games[0])
+        generate_report(games[0])
+
+        def on_game_type(event):
+            typed = game_cb.get()
+            if typed == "":
+                game_cb.configure(values=games)
+            else:
+                filtered = [g for g in games if typed.lower() in g.lower()]
+                game_cb.configure(values=filtered)
+            
+            if typed in games:
+                generate_report(typed)
+
+        game_cb.bind("<KeyRelease>", on_game_type)
+
+        ctk.CTkButton(dialog, text="Close", command=dialog.destroy).pack(pady=20)
 
     # --- Tags Settings Dialog ---
 
