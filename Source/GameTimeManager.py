@@ -118,6 +118,10 @@ class Game_Time_Manager:
                                        font=("Helvetica", 12))
         self.btn_stats.pack(side=tk.RIGHT, padx=5)
 
+        self.btn_games = ctk.CTkButton(right_top_bar, text="🎮 Games", command=self.open_games_dialog, width=80,
+                                       font=("Helvetica", 12))
+        self.btn_games.pack(side=tk.RIGHT, padx=5)
+
         # --- Treeview Base Styling ---
         style = ttk.Style()
         style.theme_use("default")
@@ -248,6 +252,16 @@ class Game_Time_Manager:
                             (
                                 key TEXT PRIMARY KEY,
                                 value TEXT
+                            )
+                            ''')
+
+        self.cursor.execute('''
+                            CREATE TABLE IF NOT EXISTS dlcs
+                            (
+                                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                game_name TEXT,
+                                dlc_name TEXT,
+                                UNIQUE(game_name, dlc_name)
                             )
                             ''')
 
@@ -398,7 +412,7 @@ class Game_Time_Manager:
         for row in self.tree.get_children():
             self.tree.delete(row)
 
-        self.cursor.execute("SELECT id, game_name, tags, start_time, end_time, total_time FROM history")
+        self.cursor.execute("SELECT id, game_name, tags, start_time, end_time, total_time FROM history ORDER BY id DESC")
         for row in self.cursor.fetchall():
             game = row[1] if row[1] is not None else ""
             tags = row[2] if row[2] is not None else ""
@@ -980,7 +994,110 @@ class Game_Time_Manager:
         self.center_dialog(dialog)
         update_stats()
 
-        # --- Tags Settings Dialog ---
+    def get_dlcs_for_game(self, game_name):
+        self.cursor.execute("SELECT dlc_name FROM dlcs WHERE game_name = ? ORDER BY dlc_name", (game_name,))
+        return [row[0] for row in self.cursor.fetchall()]
+
+    def open_games_dialog(self):
+        dialog = ctk.CTkToplevel(self.root)
+        dialog.title("Games & DLC Management")
+        dialog.geometry("500x500")
+        dialog.resizable(False, False)
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        self.center_dialog(dialog)
+
+        # Game Selection
+        ctk.CTkLabel(dialog, text="Select Game:", font=("Helvetica", 14, "bold")).pack(pady=(20, 5))
+        
+        games = self.get_all_games()
+        if not games:
+            ctk.CTkLabel(dialog, text="No games found in history.", text_color="gray").pack(pady=10)
+            ctk.CTkButton(dialog, text="Close", command=dialog.destroy).pack(pady=20)
+            return
+
+        game_var = tk.StringVar(value=games[0])
+        
+        # DLC Listbox and Frame
+        ctk.CTkLabel(dialog, text="DLCs for selected game:", font=("Helvetica", 12)).pack(pady=(20, 5))
+        
+        listbox_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        listbox_frame.pack(fill=tk.BOTH, expand=True, padx=20)
+
+        actual_mode = ctk.get_appearance_mode()
+        bg_color = "#2b2b2b" if actual_mode == "Dark" else "#ffffff"
+        fg_color = "white" if actual_mode == "Dark" else "black"
+
+        dlc_listbox = tk.Listbox(listbox_frame, bg=bg_color, fg=fg_color, selectbackground="#3a7ebf",
+                                 font=("Helvetica", 12), highlightthickness=0, borderwidth=1)
+        dlc_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        def refresh_dlc_list(selected_game):
+            dlc_listbox.delete(0, tk.END)
+            for dlc in self.get_dlcs_for_game(selected_game):
+                dlc_listbox.insert(tk.END, dlc)
+
+        game_menu = ctk.CTkOptionMenu(dialog, values=games, variable=game_var, command=refresh_dlc_list)
+        game_menu.pack(pady=5)
+        game_menu.set(games[0])
+        refresh_dlc_list(games[0])
+
+        def add_dlc():
+            current_game = game_var.get()
+            dlc_dialog = ctk.CTkInputDialog(text=f"Enter DLC name for '{current_game}':", title="Add DLC")
+            new_dlc = dlc_dialog.get_input()
+            if new_dlc and new_dlc.strip():
+                try:
+                    self.cursor.execute("INSERT INTO dlcs (game_name, dlc_name) VALUES (?, ?)", 
+                                        (current_game, new_dlc.strip()))
+                    self.conn.commit()
+                    refresh_dlc_list(current_game)
+                except sqlite3.IntegrityError:
+                    messagebox.showerror("Error", "This DLC already exists for this game!", parent=dialog)
+
+        def edit_dlc():
+            selected = dlc_listbox.curselection()
+            if not selected:
+                messagebox.showwarning("Warning", "Select a DLC to edit.", parent=dialog)
+                return
+            old_dlc = dlc_listbox.get(selected[0])
+            current_game = game_var.get()
+
+            dlc_dialog = ctk.CTkInputDialog(text=f"Enter new name for DLC '{old_dlc}':", title="Edit DLC")
+            new_dlc = dlc_dialog.get_input()
+
+            if new_dlc and new_dlc.strip():
+                try:
+                    self.cursor.execute("UPDATE dlcs SET dlc_name = ? WHERE game_name = ? AND dlc_name = ?", 
+                                        (new_dlc.strip(), current_game, old_dlc))
+                    self.conn.commit()
+                    refresh_dlc_list(current_game)
+                except sqlite3.IntegrityError:
+                    messagebox.showerror("Error", "This DLC already exists for this game!", parent=dialog)
+
+        def delete_dlc():
+            selected = dlc_listbox.curselection()
+            if not selected:
+                messagebox.showwarning("Warning", "Select a DLC to delete.", parent=dialog)
+                return
+            dlc_to_delete = dlc_listbox.get(selected[0])
+            current_game = game_var.get()
+            
+            confirm = messagebox.askyesno("Confirm", f"Delete DLC '{dlc_to_delete}' from '{current_game}'?", parent=dialog)
+            if confirm:
+                self.cursor.execute("DELETE FROM dlcs WHERE game_name = ? AND dlc_name = ?", (current_game, dlc_to_delete))
+                self.conn.commit()
+                refresh_dlc_list(current_game)
+
+        btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        btn_frame.pack(pady=20)
+        ctk.CTkButton(btn_frame, text="Add", command=add_dlc, width=80).pack(side=tk.LEFT, padx=5)
+        ctk.CTkButton(btn_frame, text="Edit", command=edit_dlc, width=80).pack(side=tk.LEFT, padx=5)
+        ctk.CTkButton(btn_frame, text="Delete", command=delete_dlc, width=80, fg_color="#dc3545",
+                      hover_color="#c82333").pack(side=tk.LEFT, padx=5)
+
+    # --- Tags Settings Dialog ---
 
     def open_settings_dialog(self, target_tab=None):
         dialog = ctk.CTkToplevel(self.root)
