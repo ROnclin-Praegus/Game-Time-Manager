@@ -1041,6 +1041,53 @@ class Game_Time_Manager:
                 if dlc:
                     dlc_listbox.insert(tk.END, dlc)
 
+        def move_up():
+            selected = dlc_listbox.curselection()
+            if not selected or selected[0] == 0:
+                return
+            
+            idx = selected[0]
+            current_game = game_cb.get()
+            dlcs = self.get_dlcs_for_game(current_game)
+            
+            name_to_move = dlcs[idx]
+            name_above = dlcs[idx-1]
+            
+            temp_name = f"TEMP_SWAP_{time.time()}"
+            self.cursor.execute("UPDATE dlcs SET dlc_name = ? WHERE game_name = ? AND dlc_name = ?", (temp_name, current_game, name_to_move))
+            self.cursor.execute("UPDATE dlcs SET dlc_name = ? WHERE game_name = ? AND dlc_name = ?", (name_to_move, current_game, name_above))
+            self.cursor.execute("UPDATE dlcs SET dlc_name = ? WHERE game_name = ? AND dlc_name = ?", (name_above, current_game, temp_name))
+            self.conn.commit()
+            
+            refresh_dlc_list(current_game)
+            dlc_listbox.select_set(idx - 1)
+
+        def move_down():
+            selected = dlc_listbox.curselection()
+            current_game = game_cb.get()
+            dlcs = self.get_dlcs_for_game(current_game)
+            if not selected or selected[0] >= len(dlcs) - 1:
+                return
+            
+            idx = selected[0]
+            name_to_move = dlcs[idx]
+            name_below = dlcs[idx+1]
+            
+            temp_name = f"TEMP_SWAP_{time.time()}"
+            self.cursor.execute("UPDATE dlcs SET dlc_name = ? WHERE game_name = ? AND dlc_name = ?", (temp_name, current_game, name_to_move))
+            self.cursor.execute("UPDATE dlcs SET dlc_name = ? WHERE game_name = ? AND dlc_name = ?", (name_to_move, current_game, name_below))
+            self.cursor.execute("UPDATE dlcs SET dlc_name = ? WHERE game_name = ? AND dlc_name = ?", (name_below, current_game, temp_name))
+            self.conn.commit()
+            
+            refresh_dlc_list(current_game)
+            dlc_listbox.select_set(idx + 1)
+
+        move_btn_frame = ctk.CTkFrame(listbox_frame, fg_color="transparent")
+        move_btn_frame.pack(side=tk.LEFT, padx=(5, 0))
+        
+        ctk.CTkButton(move_btn_frame, text="▲", width=30, command=move_up).pack(pady=2)
+        ctk.CTkButton(move_btn_frame, text="▼", width=30, command=move_down).pack(pady=2)
+
         game_cb = ctk.CTkComboBox(dialog, values=games, command=refresh_dlc_list)
         game_cb.pack(pady=5)
         game_cb.set(games[0])
