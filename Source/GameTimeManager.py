@@ -19,7 +19,7 @@ else:
 
 # Port used for the command line to talk to the GUI
 IPC_PORT = 54321
-VERSION = "v1.1.0"
+VERSION = "v1.2.0"
 
 # Set modern theme globally
 ctk.set_appearance_mode("Dark")
@@ -420,7 +420,7 @@ class Game_Time_Manager:
         for row in self.cursor.fetchall():
             game = row[1] if row[1] is not None else ""
             tags = row[2] if row[2] is not None else ""
-            self.tree.insert("", tk.END, iid=str(row[0]), values=(game, tags, row[3], row[4], row[5]))
+            self.tree.insert("", 0, iid=str(row[0]), values=(game, tags, row[3], row[4], row[5]))
 
     def get_all_tags(self):
         self.cursor.execute("SELECT tag_name FROM tags ORDER BY tag_name")
@@ -711,7 +711,7 @@ class Game_Time_Manager:
             self.conn.commit()
 
             new_id = self.cursor.lastrowid
-            self.tree.insert("", tk.END, iid=str(new_id),
+            self.tree.insert("", 0, iid=str(new_id),
                              values=(self.game_name_str, self.current_tags_str, self.current_start_str,
                                      self.current_end_str, total_time))
 
@@ -1512,6 +1512,9 @@ class Game_Time_Manager:
                                               font=("Helvetica", 11, "italic"), text_color="gray")
         self.last_backup_label.pack(pady=(5, 10))
 
+        ctk.CTkButton(tab_backup, text="Perform Manual Backup", command=self.perform_backup,
+                      fg_color="#28a745", hover_color="#218838").pack(pady=5)
+
         ctk.CTkLabel(tab_backup, text="Manual Restore", font=("Helvetica", 12, "bold")).pack(pady=(10, 5))
         ctk.CTkButton(tab_backup, text="Import Backup", command=self.import_backup,
                       fg_color="#3a7ebf").pack(pady=5)
@@ -1660,7 +1663,7 @@ class Game_Time_Manager:
                     (game_val, tags_val, start_val, end_val, total_val))
                 self.conn.commit()
                 new_id = self.cursor.lastrowid
-                self.tree.insert("", tk.END, iid=str(new_id),
+                self.tree.insert("", 0, iid=str(new_id),
                                  values=(game_val, tags_val, start_val, end_val, total_val))
                 self.status_label.configure(text="Manual entry added!", text_color="#28a745")
 
