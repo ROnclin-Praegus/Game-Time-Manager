@@ -1,6 +1,6 @@
 # Game Time Manager
 
-<img width="1024" height="1024" alt="Program_icoon" src="https://github.com/user-attachments/assets/887cc011-d8f0-4e4b-bf43-96b85e23fcf3" />
+<img width="512" height="512" alt="Program_icoon" src="https://github.com/user-attachments/assets/887cc011-d8f0-4e4b-bf43-96b85e23fcf3" />
 
 
 Game Time Manager is a lightweight, local desktop application built in Python designed to help you track and manage the time you spend playing different games. It acts as an advanced stopwatch that saves your sessions to a database, allowing you to categorize your playtime with custom tags and view your complete gaming history. This is a vibe coded program what started as a joke to a AI to make a stopwatch what turned into motivation to replace my current tracker.
