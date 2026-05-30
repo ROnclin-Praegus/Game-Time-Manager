@@ -118,6 +118,14 @@ class Game_Time_Manager:
                                        font=("Helvetica", 12))
         self.btn_stats.pack(side=tk.RIGHT, padx=5)
 
+        self.btn_games = ctk.CTkButton(right_top_bar, text="🎮 Games", command=self.open_games_dialog, width=80,
+                                       font=("Helvetica", 12))
+        self.btn_games.pack(side=tk.RIGHT, padx=5)
+
+        self.btn_report = ctk.CTkButton(right_top_bar, text="📋 Report", command=self.open_report_dialog, width=80,
+                                        font=("Helvetica", 12))
+        self.btn_report.pack(side=tk.RIGHT, padx=5)
+
         # --- Treeview Base Styling ---
         style = ttk.Style()
         style.theme_use("default")
@@ -248,6 +256,16 @@ class Game_Time_Manager:
                             (
                                 key TEXT PRIMARY KEY,
                                 value TEXT
+                            )
+                            ''')
+
+        self.cursor.execute('''
+                            CREATE TABLE IF NOT EXISTS dlcs
+                            (
+                                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                game_name TEXT,
+                                dlc_name TEXT,
+                                UNIQUE(game_name, dlc_name)
                             )
                             ''')
 
@@ -398,7 +416,7 @@ class Game_Time_Manager:
         for row in self.tree.get_children():
             self.tree.delete(row)
 
-        self.cursor.execute("SELECT id, game_name, tags, start_time, end_time, total_time FROM history")
+        self.cursor.execute("SELECT id, game_name, tags, start_time, end_time, total_time FROM history ORDER BY id DESC")
         for row in self.cursor.fetchall():
             game = row[1] if row[1] is not None else ""
             tags = row[2] if row[2] is not None else ""
@@ -980,7 +998,348 @@ class Game_Time_Manager:
         self.center_dialog(dialog)
         update_stats()
 
-        # --- Tags Settings Dialog ---
+    def get_dlcs_for_game(self, game_name):
+        self.cursor.execute("SELECT dlc_name FROM dlcs WHERE game_name = ? ORDER BY id", (game_name,))
+        return [row[0] for row in self.cursor.fetchall()]
+
+    def open_games_dialog(self):
+        dialog = ctk.CTkToplevel(self.root)
+        dialog.title("Games & DLC Management")
+        dialog.geometry("500x500")
+        dialog.resizable(False, False)
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        self.center_dialog(dialog)
+
+        # Game Selection
+        ctk.CTkLabel(dialog, text="Select Game:", font=("Helvetica", 14, "bold")).pack(pady=(20, 5))
+        
+        games = self.get_all_games()
+        if not games:
+            ctk.CTkLabel(dialog, text="No games found in history.", text_color="gray").pack(pady=10)
+            ctk.CTkButton(dialog, text="Close", command=dialog.destroy).pack(pady=20)
+            return
+
+        # DLC Listbox and Frame
+        ctk.CTkLabel(dialog, text="DLCs for selected game:", font=("Helvetica", 12)).pack(pady=(20, 5))
+        
+        listbox_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        listbox_frame.pack(fill=tk.BOTH, expand=True, padx=20)
+
+        actual_mode = ctk.get_appearance_mode()
+        bg_color = "#2b2b2b" if actual_mode == "Dark" else "#ffffff"
+        fg_color = "white" if actual_mode == "Dark" else "black"
+
+        dlc_listbox = tk.Listbox(listbox_frame, bg=bg_color, fg=fg_color, selectbackground="#3a7ebf",
+                                 font=("Helvetica", 12), highlightthickness=0, borderwidth=1)
+        dlc_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        def refresh_dlc_list(selected_game):
+            dlc_listbox.delete(0, tk.END)
+            for dlc in self.get_dlcs_for_game(selected_game):
+                if dlc:
+                    dlc_listbox.insert(tk.END, dlc)
+
+        def move_up():
+            selected = dlc_listbox.curselection()
+            if not selected or selected[0] == 0:
+                return
+            
+            idx = selected[0]
+            current_game = game_cb.get()
+            dlcs = self.get_dlcs_for_game(current_game)
+            
+            name_to_move = dlcs[idx]
+            name_above = dlcs[idx-1]
+            
+            temp_name = f"TEMP_SWAP_{time.time()}"
+            self.cursor.execute("UPDATE dlcs SET dlc_name = ? WHERE game_name = ? AND dlc_name = ?", (temp_name, current_game, name_to_move))
+            self.cursor.execute("UPDATE dlcs SET dlc_name = ? WHERE game_name = ? AND dlc_name = ?", (name_to_move, current_game, name_above))
+            self.cursor.execute("UPDATE dlcs SET dlc_name = ? WHERE game_name = ? AND dlc_name = ?", (name_above, current_game, temp_name))
+            self.conn.commit()
+            
+            refresh_dlc_list(current_game)
+            dlc_listbox.select_set(idx - 1)
+
+        def move_down():
+            selected = dlc_listbox.curselection()
+            current_game = game_cb.get()
+            dlcs = self.get_dlcs_for_game(current_game)
+            if not selected or selected[0] >= len(dlcs) - 1:
+                return
+            
+            idx = selected[0]
+            name_to_move = dlcs[idx]
+            name_below = dlcs[idx+1]
+            
+            temp_name = f"TEMP_SWAP_{time.time()}"
+            self.cursor.execute("UPDATE dlcs SET dlc_name = ? WHERE game_name = ? AND dlc_name = ?", (temp_name, current_game, name_to_move))
+            self.cursor.execute("UPDATE dlcs SET dlc_name = ? WHERE game_name = ? AND dlc_name = ?", (name_to_move, current_game, name_below))
+            self.cursor.execute("UPDATE dlcs SET dlc_name = ? WHERE game_name = ? AND dlc_name = ?", (name_below, current_game, temp_name))
+            self.conn.commit()
+            
+            refresh_dlc_list(current_game)
+            dlc_listbox.select_set(idx + 1)
+
+        move_btn_frame = ctk.CTkFrame(listbox_frame, fg_color="transparent")
+        move_btn_frame.pack(side=tk.LEFT, padx=(5, 0))
+        
+        ctk.CTkButton(move_btn_frame, text="▲", width=30, command=move_up).pack(pady=2)
+        ctk.CTkButton(move_btn_frame, text="▼", width=30, command=move_down).pack(pady=2)
+
+        game_cb = ctk.CTkComboBox(dialog, values=games, command=refresh_dlc_list)
+        game_cb.pack(pady=5)
+        game_cb.set(games[0])
+        refresh_dlc_list(games[0])
+
+        def on_game_type(event):
+            typed = game_cb.get()
+            if typed == "":
+                game_cb.configure(values=games)
+            else:
+                filtered = [g for g in games if typed.lower() in g.lower()]
+                game_cb.configure(values=filtered)
+            
+            # If the typed value matches exactly, refresh the list
+            if typed in games:
+                refresh_dlc_list(typed)
+
+        game_cb.bind("<KeyRelease>", on_game_type)
+
+        def add_dlc():
+            current_game = game_cb.get()
+            if current_game not in games:
+                messagebox.showwarning("Warning", f"The game '{current_game}' does not exist in history.", parent=dialog)
+                return
+            dlc_dialog = ctk.CTkInputDialog(text=f"Enter DLC name for '{current_game}':", title="Add DLC")
+            new_dlc = dlc_dialog.get_input()
+            if new_dlc and new_dlc.strip():
+                try:
+                    self.cursor.execute("INSERT INTO dlcs (game_name, dlc_name) VALUES (?, ?)", 
+                                        (current_game, new_dlc.strip()))
+                    self.conn.commit()
+                    refresh_dlc_list(current_game)
+                except sqlite3.IntegrityError:
+                    messagebox.showerror("Error", "This DLC already exists for this game!", parent=dialog)
+            elif new_dlc is not None:
+                messagebox.showwarning("Warning", "DLC name cannot be empty.", parent=dialog)
+
+        def edit_dlc():
+            current_game = game_cb.get()
+            if current_game not in games:
+                messagebox.showwarning("Warning", f"The game '{current_game}' does not exist in history.", parent=dialog)
+                return
+            selected = dlc_listbox.curselection()
+            if not selected:
+                messagebox.showwarning("Warning", "Select a DLC to edit.", parent=dialog)
+                return
+            
+            old_dlc = dlc_listbox.get(selected[0])
+
+            dlc_dialog = ctk.CTkInputDialog(text=f"Enter new name for DLC (currently '{old_dlc}'):", title="Edit DLC")
+            new_dlc = dlc_dialog.get_input()
+
+            if new_dlc and new_dlc.strip():
+                try:
+                    self.cursor.execute("UPDATE dlcs SET dlc_name = ? WHERE game_name = ? AND dlc_name = ?",
+                                        (new_dlc.strip(), current_game, old_dlc))
+                    self.conn.commit()
+                    refresh_dlc_list(current_game)
+                except sqlite3.IntegrityError:
+                    messagebox.showerror("Error", "This DLC name already exists for this game!", parent=dialog)
+            elif new_dlc is not None:
+                messagebox.showwarning("Warning", "DLC name cannot be empty.", parent=dialog)
+
+        def delete_dlc():
+            current_game = game_cb.get()
+            if current_game not in games:
+                messagebox.showwarning("Warning", f"The game '{current_game}' does not exist in history.", parent=dialog)
+                return
+            selected = dlc_listbox.curselection()
+            if not selected:
+                messagebox.showwarning("Warning", "Select a DLC to delete.", parent=dialog)
+                return
+            
+            dlc_to_delete = dlc_listbox.get(selected[0])
+            
+            confirm = messagebox.askyesno("Confirm", f"Delete DLC '{dlc_to_delete}' from '{current_game}'?", parent=dialog)
+            if confirm:
+                self.cursor.execute("DELETE FROM dlcs WHERE game_name = ? AND dlc_name = ?", (current_game, dlc_to_delete))
+                self.conn.commit()
+                refresh_dlc_list(current_game)
+
+        btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        btn_frame.pack(pady=20)
+        ctk.CTkButton(btn_frame, text="Add", command=add_dlc, width=80).pack(side=tk.LEFT, padx=5)
+        ctk.CTkButton(btn_frame, text="Edit", command=edit_dlc, width=80).pack(side=tk.LEFT, padx=5)
+        ctk.CTkButton(btn_frame, text="Delete", command=delete_dlc, width=80, fg_color="#dc3545",
+                      hover_color="#c82333").pack(side=tk.LEFT, padx=5)
+
+    def open_report_dialog(self):
+        dialog = ctk.CTkToplevel(self.root)
+        dialog.title("Game Timeline Report")
+        dialog.geometry("600x700")
+        dialog.resizable(False, False)
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        self.center_dialog(dialog)
+
+        # Game Selection
+        ctk.CTkLabel(dialog, text="Select Game:", font=("Helvetica", 14, "bold")).pack(pady=(20, 5))
+        
+        games = self.get_all_games()
+        if not games:
+            ctk.CTkLabel(dialog, text="No games found in history.", text_color="gray").pack(pady=10)
+            ctk.CTkButton(dialog, text="Close", command=dialog.destroy).pack(pady=20)
+            return
+
+        report_text = ctk.CTkTextbox(dialog, width=550, height=500, font=("Courier New", 12))
+        report_text.pack(pady=10, padx=20)
+
+        def generate_report(selected_game):
+            import re
+            report_text.configure(state="normal")
+            report_text.delete("1.0", tk.END)
+            
+            # Fetch all history for this game
+            self.cursor.execute("SELECT tags, start_time, total_time FROM history WHERE game_name = ?", (selected_game,))
+            history = self.cursor.fetchall()
+            
+            # Fetch all named DLCs for this game from db
+            dlcs = self.get_dlcs_for_game(selected_game)
+            # Filter out any lingering null/empty strings
+            dlcs = [d for d in dlcs if d and d.strip()]
+            
+            def time_to_seconds(t_str):
+                try:
+                    parts = t_str.split(':')
+                    return int(parts[0]) * 3600 + int(parts[1]) * 60 + float(parts[2])
+                except:
+                    return 0
+
+            def seconds_to_hms(total_seconds):
+                hours, remainder = divmod(int(total_seconds), 3600)
+                minutes, seconds = divmod(remainder, 60)
+                return f"{hours:02}:{minutes:02}:{seconds:02}.00"
+
+            def get_timeline_and_stats(section_name, is_base_game, start_tag_any, start_tag_100, hundred_tag):
+                relevant_starts = []
+                hundred_starts = []
+                any_sec = 0
+                hundred_sec = 0
+                
+                for tags_str, start_time_str, total_time_str in history:
+                    tags = [t.strip() for t in tags_str.split(",")]
+                    try:
+                        dt = datetime.strptime(start_time_str, "%d/%m/%Y %H:%M:%S")
+                        sec = time_to_seconds(total_time_str)
+                        
+                        if start_tag_any in tags or start_tag_100 in tags:
+                            relevant_starts.append((dt, start_time_str))
+                        if hundred_tag in tags:
+                            hundred_starts.append((dt, start_time_str))
+                            
+                        if start_tag_any in tags:
+                            any_sec += sec
+                        if hundred_tag in tags:
+                            hundred_sec += sec
+                            
+                    except ValueError:
+                        continue
+                
+                relevant_starts.sort()
+                hundred_starts.sort()
+                
+                def format_date(dt_str):
+                    if dt_str == "empty": return "empty"
+                    return dt_str.split(" ")[0]
+
+                started = format_date(relevant_starts[0][1]) if relevant_starts else "empty"
+                finished = format_date(relevant_starts[-1][1]) if relevant_starts else "empty"
+                hundred_p = format_date(hundred_starts[-1][1]) if hundred_starts else "empty"
+                
+                # Logic for finish time: 
+                # Base Game: any% total, fallback to 100% total
+                # DLC: any% total
+                if is_base_game:
+                    finish_time = any_sec if any_sec > 0 else hundred_sec
+                else:
+                    finish_time = any_sec
+
+                section_report = f"{section_name}:\n"
+                section_report += f"Started: {started}\n"
+                section_report += f"Finished: {finished} - time: {seconds_to_hms(finish_time)}\n"
+                section_report += f"100%'d: {hundred_p} - time: {seconds_to_hms(hundred_sec)}\n"
+                
+                return section_report, any_sec, hundred_sec
+
+            report = f"Timeline ({selected_game}):\n\n"
+            total_any = 0
+            total_hundred = 0
+            
+            # Base Game Section
+            bg_report, bg_any, bg_100 = get_timeline_and_stats("Base game", True, "Base game - any%", "Base game - 100%", "Base game - 100%")
+            report += bg_report + "\n---\n\n"
+            total_any += bg_any
+            total_hundred += bg_100
+            
+            # Dynamically determine the maximum DLC number from history tags
+            max_dlc_num = 0
+            for tags_str, _, _ in history:
+                tags = [t.strip() for t in tags_str.split(",")]
+                for tag in tags:
+                    match = re.search(r'DLC (\d+) -', tag, re.IGNORECASE)
+                    if match:
+                        max_dlc_num = max(max_dlc_num, int(match.group(1)))
+
+            # Number of DLC sections is max of registered DLCs or those found in history
+            total_dlcs_to_show = max(len(dlcs), max_dlc_num)
+
+            # DLC Sections
+            for i in range(1, total_dlcs_to_show + 1):
+                if i <= len(dlcs) and dlcs[i-1]:
+                    dlc_display_name = dlcs[i-1]
+                else:
+                    dlc_display_name = f"DLC {i} - name missing"
+                
+                dlc_report, dlc_any, dlc_100 = get_timeline_and_stats(f"DLC {i} ({dlc_display_name})", False, f"DLC {i} - any%", f"DLC {i} - 100%", f"DLC {i} - 100%")
+                report += dlc_report + "\n---\n\n"
+                total_any += dlc_any
+                total_hundred += dlc_100
+            
+            report += "Total time:\n"
+            report += f"any%: {seconds_to_hms(total_any)}\n"
+            report += f"100%: {seconds_to_hms(total_hundred)}\n"
+            
+            report_text.insert(tk.END, report)
+            report_text.configure(state="disabled")
+            
+            report_text.insert(tk.END, report)
+            report_text.configure(state="disabled")
+
+        game_cb = ctk.CTkComboBox(dialog, values=games, command=generate_report, width=300)
+        game_cb.pack(pady=5)
+        game_cb.set(games[0])
+        generate_report(games[0])
+
+        def on_game_type(event):
+            typed = game_cb.get()
+            if typed == "":
+                game_cb.configure(values=games)
+            else:
+                filtered = [g for g in games if typed.lower() in g.lower()]
+                game_cb.configure(values=filtered)
+            
+            if typed in games:
+                generate_report(typed)
+
+        game_cb.bind("<KeyRelease>", on_game_type)
+
+        ctk.CTkButton(dialog, text="Close", command=dialog.destroy).pack(pady=20)
+
+    # --- Tags Settings Dialog ---
 
     def open_settings_dialog(self, target_tab=None):
         dialog = ctk.CTkToplevel(self.root)
