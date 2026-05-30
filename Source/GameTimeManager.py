@@ -420,7 +420,7 @@ class Game_Time_Manager:
         for row in self.cursor.fetchall():
             game = row[1] if row[1] is not None else ""
             tags = row[2] if row[2] is not None else ""
-            self.tree.insert("", 0, iid=str(row[0]), values=(game, tags, row[3], row[4], row[5]))
+            self.tree.insert("", tk.END, iid=str(row[0]), values=(game, tags, row[3], row[4], row[5]))
 
     def get_all_tags(self):
         self.cursor.execute("SELECT tag_name FROM tags ORDER BY tag_name")
