@@ -710,10 +710,7 @@ class Game_Time_Manager:
                 (self.game_name_str, self.current_tags_str, self.current_start_str, self.current_end_str, total_time))
             self.conn.commit()
 
-            new_id = self.cursor.lastrowid
-            self.tree.insert("", 0, iid=str(new_id),
-                             values=(self.game_name_str, self.current_tags_str, self.current_start_str,
-                                     self.current_end_str, total_time))
+            self.load_history()
 
             self.running = False
             self.elapsed_time = 0
@@ -730,7 +727,7 @@ class Game_Time_Manager:
             self.status_label.configure(text="Saved to database and reset!", text_color="#28a745")
 
     def export_to_txt(self):
-        self.cursor.execute("SELECT game_name, tags, start_time, end_time, total_time FROM history")
+        self.cursor.execute("SELECT game_name, tags, start_time, end_time, total_time FROM history ORDER BY id DESC")
         records = self.cursor.fetchall()
 
         if not records:
@@ -1655,16 +1652,14 @@ class Game_Time_Manager:
                     "UPDATE history SET game_name=?, tags=?, start_time=?, end_time=?, total_time=? WHERE id=?",
                     (game_val, tags_val, start_val, end_val, total_val, selected_item))
                 self.conn.commit()
-                self.tree.item(selected_item, values=(game_val, tags_val, start_val, end_val, total_val))
+                self.load_history()
                 self.status_label.configure(text="Entry updated!", text_color="#28a745")
             else:
                 self.cursor.execute(
                     "INSERT INTO history (game_name, tags, start_time, end_time, total_time) VALUES (?, ?, ?, ?, ?)",
                     (game_val, tags_val, start_val, end_val, total_val))
                 self.conn.commit()
-                new_id = self.cursor.lastrowid
-                self.tree.insert("", 0, iid=str(new_id),
-                                 values=(game_val, tags_val, start_val, end_val, total_val))
+                self.load_history()
                 self.status_label.configure(text="Manual entry added!", text_color="#28a745")
 
             dialog.destroy()
