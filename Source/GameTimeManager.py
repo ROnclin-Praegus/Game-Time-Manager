@@ -19,7 +19,7 @@ else:
 
 # Port used for the command line to talk to the GUI
 IPC_PORT = 54321
-VERSION = "v1.2.0"
+VERSION = "v1.2.1"
 
 # Set modern theme globally
 ctk.set_appearance_mode("Dark")
